@@ -1,0 +1,20 @@
+# Executáveis e instaladores gerados
+*.exe
+*.dll
+*.bin
+Output/
+
+# Arquivos temporários
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+
+# Configurações locais e credenciais
+.env
+.env.*
+config.local.ini
+
+# Documentação PDF: revisar antes de versionar
+*.pdf
