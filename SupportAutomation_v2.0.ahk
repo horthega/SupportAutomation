@@ -622,27 +622,93 @@ F2::{
     TocarSom("completed.mp3")
     MostrarAviso("✓ Pesquisa realizada!")
 }
+
+; =====================================================
+; F3 - FORMATAR ENDEREÇO
+;
+; Pressionamento rápido:
+;   Formata e copia o endereço normalmente.
+;
+; Pressionamento por 0,2 segundo:
+;   Formata e copia com a frase de confirmação.
+; =====================================================
+
 F3::{
+    ; Soltou antes de 0,2 segundo: modo normal
+    if KeyWait("F3", "T0.2"){
+        ExecutarF3(false)
+    }
+    else{
+        ; Atingiu 0,2 segundo: modo com a frase
+        ExecutarF3(true)
+
+        ; Impede repetição enquanto continuar pressionado
+        KeyWait("F3")
+    }
+}
+
+
+; PROCESSAMENTO DO F3
+ExecutarF3(confirmarEndereco := false){
+
+    ; Guarda o clipboard atual
+    clipboardAnterior := A_Clipboard
+
+    ; ---------------------------------------------
+    ; COPIA O TEXTO SELECIONADO
+    ; ---------------------------------------------
+
     A_Clipboard := ""
     Send "^c"
 
     if !ClipWait(1){
+        A_Clipboard := clipboardAnterior
         MostrarAviso("❌ Não foi possível copiar o endereço.")
         return
     }
 
     t := Trim(A_Clipboard)
 
-    ; Normaliza o texto
+    ; ---------------------------------------------
+    ; VALIDA SE O TEXTO PARECE SER UM ENDEREÇO
+    ;
+    ; Palavras aceitas:
+    ; Endereço, Rua, Avenida, Quadra ou Lote.
+    ; Não aceita apenas parte de outra palavra.
+    ; ---------------------------------------------
+
+    if !RegExMatch(
+        t,
+        "i)(?:^|[^A-Za-zÀ-ÿ])(?:endere[cç]o|rua|avenida|quadra|lote)(?=$|[^A-Za-zÀ-ÿ])"
+    ){
+        A_Clipboard := clipboardAnterior
+
+        MostrarAviso(
+            "⚠️ O texto selecionado não parece ser um endereço."
+        )
+        return
+    }
+
+    ; ---------------------------------------------
+    ; NORMALIZA O TEXTO
+    ; ---------------------------------------------
+
     t := StrReplace(t, "`r", " ")
     t := StrReplace(t, "`n", " ")
     t := RegExReplace(t, "\s+", " ")
     t := Trim(t)
 
     ; Normaliza variações
-    t := RegExReplace(t, "i)Complemento\s+Endereço\s*:", "Complemento:")
+    t := RegExReplace(
+        t,
+        "i)Complemento\s+Endereço\s*:",
+        "Complemento:"
+    )
 
-    ; Extrai os campos independentemente da ordem
+    ; ---------------------------------------------
+    ; EXTRAI OS CAMPOS INDEPENDENTEMENTE DA ORDEM
+    ; ---------------------------------------------
+
     e := ExtrairCampo(t, "Endereço")
     num := ExtrairCampo(t, "Número|NUMERO")
     cond := ExtrairCampo(t, "Condomínio")
@@ -655,115 +721,186 @@ F3::{
 
     arr := []
 
-    ; Endereço
+    ; ---------------------------------------------
+    ; ENDEREÇO
+    ; ---------------------------------------------
+
     e := Trim(e, " ,;-")
-    if e != ""
+
+    if (e != "")
         arr.Push(e)
 
-    ; Número
+    ; ---------------------------------------------
+    ; NÚMERO
+    ; ---------------------------------------------
+
     num := Trim(num, " ,;-")
 
     if !(num = "" || RegExMatch(num, "i)^(SN|S/N|-)$"))
         arr.Push(num)
 
-    ; Condomínio
+    ; ---------------------------------------------
+    ; CONDOMÍNIO
+    ; ---------------------------------------------
+
     cond := Trim(cond, " ,;-")
 
-    if cond != ""
+    if (cond != "")
         arr.Push(cond)
 
-    ; Bairro
+    ; ---------------------------------------------
+    ; BAIRRO
+    ; ---------------------------------------------
+
     bairro := Trim(bairro, " ,;-")
 
-    if bairro != ""
+    if (bairro != "")
         arr.Push(bairro)
 
-    ; Apartamento
+    ; ---------------------------------------------
+    ; APARTAMENTO
+    ; ---------------------------------------------
+
     apt := Trim(apt, " ,;-")
 
     if !(apt = "" || apt = "-")
         arr.Push("Apartamento " apt)
 
-    ; Cidade + Estado
+    ; ---------------------------------------------
+    ; CIDADE + ESTADO
+    ; ---------------------------------------------
+
     cidade := Trim(cidade, " ,;-")
     estado := Trim(estado, " ,;-")
 
     localidade := ""
 
-    if cidade != ""
+    if (cidade != "")
         localidade := cidade
 
-    if estado != ""{
-        if localidade != ""
+    if (estado != ""){
+        if (localidade != "")
             localidade .= " - " estado
         else
             localidade := estado
     }
 
-    if localidade != ""
+    if (localidade != "")
         arr.Push(localidade)
 
-    ; Complemento
+    ; ---------------------------------------------
+    ; COMPLEMENTO
+    ; ---------------------------------------------
+
     comp := Trim(comp, " ,;-")
 
-    if comp != ""{
+    if (comp != ""){
 
-        for w in ["QUADRA", "LOTE", "CASA", "SALA", "BLOCO", "TORRE", "ANDAR"]
-            comp := RegExReplace(comp, "\s+" w, ", " w)
+        for w in [
+            "QUADRA",
+            "LOTE",
+            "CASA",
+            "SALA",
+            "BLOCO",
+            "TORRE",
+            "ANDAR"
+        ]{
+            comp := RegExReplace(
+                comp,
+                "i)\s+" w,
+                ", " w
+            )
+        }
 
         comp := Trim(comp, " ,;-")
 
-        if comp != ""
+        if (comp != "")
             arr.Push(comp)
     }
 
-    ; Referência
+    ; ---------------------------------------------
+    ; REFERÊNCIA
+    ; ---------------------------------------------
+
     referencia := Trim(referencia, " ,;-")
 
-    if referencia != ""
+    if (referencia != "")
         arr.Push(referencia)
 
-    ; Remove duplicidades
+    ; ---------------------------------------------
+    ; REMOVE DUPLICIDADES
+    ; ---------------------------------------------
+
     arrFinal := []
 
     for v in arr{
 
         v := Trim(v, " ,;-")
 
-        if v = ""
+        if (v = "")
             continue
 
         repetido := false
 
         for existente in arrFinal{
-            if StrLower(existente) = StrLower(v){
+            if (StrLower(existente) = StrLower(v)){
                 repetido := true
                 break
             }
         }
 
-        if !repetido
+        if (!repetido)
             arrFinal.Push(v)
     }
 
-    ; Monta o resultado
+    ; ---------------------------------------------
+    ; MONTA O ENDEREÇO FORMATADO
+    ; ---------------------------------------------
+
     out := ""
 
     for i, v in arrFinal{
 
-        if i > 1
+        if (i > 1)
             out .= ", "
 
         out .= v
     }
 
-    A_Clipboard := "Endereço: " out "`n"
+    ; Impede sucesso se nenhum campo foi extraído
+    if (out = ""){
+        A_Clipboard := clipboardAnterior
+
+        MostrarAviso(
+            "⚠️ Não foi possível extrair os campos do endereço."
+        )
+        return
+    }
+
+    ; ---------------------------------------------
+    ; MONTA A SAÍDA CONFORME O TEMPO DE PRESSÃO
+    ; ---------------------------------------------
+
+    if (confirmarEndereco){
+        resultado := "Por gentileza, me confirme seu Endereço: " out
+    }
+    else{
+        resultado := "Endereço: " out
+    }
+
+    ; ---------------------------------------------
+    ; COPIA O RESULTADO FINAL
+    ; ---------------------------------------------
+
+    A_Clipboard := resultado "`n"
 
     TocarSom("AddressFormatting.mp3")
     MostrarAviso("✓ Endereço formatado e copiado!")
 }
 
+; FUNÇÃO AUXILIAR - EXTRAI CAMPOS DO ENDEREÇO
 ExtrairCampo(txt, nomes){
+
     campos := "Endereço|CEP|Número|NUMERO|Condomínio|Bairro|Apartamento|Apto|Cidade|Estado|Complemento|Referência|Bloco"
 
     padrao := "i)(?:" nomes ")\s*:\s*(.*?)(?=\s*(?:" campos ")\s*:|$)"
@@ -773,6 +910,7 @@ ExtrairCampo(txt, nomes){
 
     return ""
 }
+
 
 ;=========================
 ; LOGIN EM ROTEADORES
@@ -1950,7 +2088,6 @@ EnviarEnderecoParaRotas(endereco, planilhaPreenchida := false) {
     }
 }
 ; LOCALIZA UM TEXTO PELO OCR
-; ---------------------------------------------
 LocalizarTextoOCRF7(resultado, termos){
     for termo in termos {
         try {
@@ -1971,7 +2108,6 @@ LocalizarTextoOCRF7(resultado, termos){
 }
 
 ; NORMALIZA TEXTO PARA COMPARAÇÃO
-; ---------------------------------------------
 NormalizarTextoF7(texto){
     texto := StrUpper(Trim(texto))
 
@@ -2008,8 +2144,6 @@ NormalizarTextoF7(texto){
 }
 
 ; CONVERTE O PERÍODO
-; Para os valores exatos do menu suspenso.
-; ---------------------------------------------
 ObterPeriodoF7(texto){
     p := NormalizarTextoF7(texto)
 
@@ -2047,8 +2181,6 @@ ObterPeriodoF7(texto){
 }
 
 ; MAPEIA A CAUSA
-; Para uma das opções aceitas pela planilha.
-; ---------------------------------------------
 ObterCausaF7(texto){
     c := NormalizarTextoF7(texto)
 
@@ -2146,16 +2278,7 @@ ObterCausaF7(texto){
         return
     }
 
-    if !InStr(MensagemFinalizacao, "{PROTOCOLO}") {
-        MostrarAviso("❌ A mensagem de finalização está sem o marcador {PROTOCOLO}.")
-        return
-    }
-
-    texto := StrReplace(
-        MensagemFinalizacao,
-        "{PROTOCOLO}",
-        protocolo
-    )
+    texto := MontarMensagemFinalizacao(protocolo)
 
     A_Clipboard := texto
 
@@ -2164,15 +2287,10 @@ ObterCausaF7(texto){
     TocarSom("Protocol.mp3")
     Send "^v"
 }
-
 ;=========================
 ; FRASEOLOGIAS
 ;=========================
 
-; FINALIZAÇÃO DE ATENDIMENTO
->+a:: {
-    SendText "Auxilio você em algo mais no momento?"
-}
 ; MOMENTO PARA VERIFICAÇÃO
 >^a::{
     SendText "Aguarde um momento enquanto verifico por gentileza"
@@ -2260,6 +2378,11 @@ O prazo de execução é de até 24 horas.
 !v::{
     SendText "Verifiquei aqui em nosso sistema e consta que a sua conexão está normal, está aparecendo algum erro de rede? É em todos os dispositivos? Se for possível me enviar uma foto, melhor ainda!"
 }
+; FINALIZAÇÃO DE ATENDIMENTO
+!x::{
+    SendText "Auxilio você em algo mais no momento?"
+}
+
 ; APREENTAÇÃO COM PERGUNTA
 <!SC073::{
     global NomeAtendente
@@ -2593,7 +2716,7 @@ global frase1
 
     MostrarAviso("✓ Mensagem temporária 1 enviada!")
 }
-!z::{
+!y::{
 global frase2
 
     A_Clipboard := frase2
@@ -2601,4 +2724,13 @@ global frase2
     Send "^v"
     TocarSom("O.S.Filling.mp3")
     MostrarAviso("✓ Mensagem temporária 2 enviada!")
+}
+!z::{
+global frase3
+
+    A_Clipboard := frase3
+    Sleep 50
+    Send "^v"
+    TocarSom("O.S.Filling.mp3")
+    MostrarAviso("✓ Mensagem temporária 3 enviada!")
 }
