@@ -2,7 +2,7 @@
 ; CONFIGURAÇÕES PESSOAIS
 ;=========================
 
-NomeAtendente := "João"
+NomeAtendente := ""
 
 ; ============================================================
 ; MENSAGEM DE FINALIZAÇÃO DO PROTOCOLO
@@ -27,7 +27,7 @@ MontarMensagemFinalizacao(protocolo) {
         return StrReplace(texto, "{PROTOCOLO}", protocolo)
 
     ; Procura "Protocolo:" sem atravessar quebras de linha.
-    if RegExMatch(texto, "i)protocolo(?:[ \t]+deste[ \t]+atendimento)?[ \t]*:", &m) {
+    if RegExMatch(texto, "i)protocolo(?:[ \t]+(?:do|deste)[ \t]+atendimento)?[ \t]*:", &m) {
         fimCabecalho := m.Pos + m.Len - 1
 
         ; Insere o número na mesma linha do cabeçalho.

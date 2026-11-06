@@ -1,9 +1,17 @@
 #Requires AutoHotkey v2.0
+
+;@Ahk2Exe-SetVersion 2.2.1
 #SingleInstance Force
+
+IUIAutomationActivateScreenReader := 0
 
 #Include OCR.ahk
 #Include UIA.ahk
-#Include PersonalizeAqui.ahk
+#Include Personalizaveis.ahk
+#Include Interface.ahk
+#Include Atualizacao.ahk
+
+TraySetIcon(A_ScriptDir "\Imagens\IDV\Logo.ico")
 
 SetTitleMatchMode 2
 CoordMode "Mouse", "Client"
@@ -13,9 +21,12 @@ PastaImagens := A_ScriptDir "\Imagens"
 global avisoAcrylicHwnd := 0
 OnMessage(0x0014, WM_ERASEBKGND_Aviso)
 
+InicializarInterface()
+InicializarAtualizacao()
 
 MostrarAviso(mensagem, tempo := 3) {
     global avisoAcrylicHwnd
+    global AvisosAtivos
 
     static avisoGui := 0
     static timerAviso := 0
@@ -53,7 +64,11 @@ MostrarAviso(mensagem, tempo := 3) {
     else if InStr(corpo, "⚠") {
         rodape := "SUPPORTAUTOMATION  |  ATENÇÃO"
         corRodape := "FFC45C"
+        TocarSom("alert2.mp3")
     }
+
+    if !AvisosAtivos
+    return
 
     ; ---------------------------------------------
     ; REMOVE SÍMBOLOS DO INÍCIO
@@ -323,24 +338,118 @@ AplicarAcrylic(hwnd, alpha := 0xB0, corRGB := 0x263238) {
 }
 
 TocarSom(arquivo) {
+    global SonsAtivos
+
+    if !SonsAtivos
+        return
+
     caminho := A_ScriptDir . "\sons\" . arquivo
 
     if FileExist(caminho)
         SoundPlay(caminho)
 }
 
-;=========================
-; CAPTURA DE TEXTO
-;========================= 
-
+; =============================================
+; COPIAR NÚMERO DA CHAMADA DO 3CXPHONE
+; =============================================
 F1::{
-    Send "#+t"
+    try {
+
+        ; Caminho do 3CXPhone
+        caminho3CX := "C:\Program Files (x86)\3CXPhone\3CXPhone.exe"
+
+        ; Verifica se o aplicativo já está aberto
+        hwnd := WinExist("ahk_exe 3CXPhone.exe")
+
+        ; Se estiver fechado, abre o aplicativo
+        if !hwnd {
+
+            Run('"' . caminho3CX . '"')
+
+            hwnd := WinWait(
+                "ahk_exe 3CXPhone.exe",
+                ,
+                10
+            )
+
+            if !hwnd
+                throw Error("Não foi possível abrir o 3CXPhone.")
+        }
+
+        ; Ativa a janela do telefone
+        WinActivate("ahk_id " hwnd)
+
+        if !WinWaitActive("ahk_id " hwnd, , 5)
+            throw Error("Não foi possível ativar o 3CXPhone.")        
+
+        ; ---------------------------------------------
+        ; CAPTURA A REGIÃO DO NÚMERO
+        ; ---------------------------------------------
+
+        WinGetClientPos &wx, &wy, &ww, &wh, "ahk_id " hwnd
+
+        xOCR := wx + Round(ww * 0.08)
+        yOCR := wy + Round(wh * 0.10)
+
+        wOCR := Round(ww * 0.84)
+        hOCR := Round(wh * 0.30)
+
+        ; ---------------------------------------------
+        ; IDENTIFICA O NÚMERO PELO OCR
+        ; ---------------------------------------------
+
+        resultadoOCR := OCR.FromRect(
+            xOCR,
+            yOCR,
+            wOCR,
+            hOCR,
+            {
+                lang: "pt-BR",
+                scale: 4.0
+            }
+        )
+
+        ; Procura um número com 10 ou 11 dígitos
+        if RegExMatch(
+            resultadoOCR.Text,
+            "(?<!\d)\d{10,11}(?!\d)",
+            &mNumero
+        ) {
+
+            numero := mNumero[0]
+
+            ; Copia somente o número
+            A_Clipboard := numero
+
+            TocarSom("ContactCopy.mp3")
+
+            MostrarAviso(
+                "✓ Número identificado! " numero,
+                5
+            )
+
+        } else {
+
+            TocarSom("alert2.mp3")
+
+            MostrarAviso(
+                "❌ Não foi possível identificar o número da chamada.",
+                5
+            )
+        }
+
+    } catch as erro {
+
+        MostrarAviso(
+            "❌ Erro ao acessar o 3CXPhone:`n" erro.Message,
+            5
+        )
+    }
 }
 
 ;=========================
 ; PESQUISA DE CLIENTE
 ;=========================
-
 F2::{
     A_Clipboard := ""
     Send "^c"
@@ -684,7 +793,7 @@ ExecutarF3(confirmarEndereco := false){
         A_Clipboard := clipboardAnterior
 
         MostrarAviso(
-            "⚠️ O texto selecionado não parece ser um endereço."
+            "❌ O texto selecionado não parece ser um endereço."
         )
         return
     }
@@ -925,7 +1034,7 @@ F4::{
     Send "^c"
 
     if !ClipWait(1){
-        MostrarAviso("❌ Selecione o IPv4.")
+        MostrarAviso("❌ Selecione um IPv4.")
         return
     }
 
@@ -965,7 +1074,7 @@ F4::{
     zyxelClickX := 0
     zyxelClickY := 0
 
-    while (A_TickCount - inicio < 10000){
+    while (A_TickCount - inicio < 7000){
 
         ; ---------------------------------------------
         ; HUAWEI DIRETO
@@ -985,18 +1094,10 @@ F4::{
         }
 
         ; ---------------------------------------------
-        ; TP-LINK DIRETO
+        ; TP-LINK VIA OCR — PRIMEIRA OPÇÃO
         ; ---------------------------------------------
 
-        if ImageSearch(
-            &x,
-            &y,
-            0,
-            0,
-            A_ScreenWidth,
-            A_ScreenHeight * 0.35,
-            "*100 " PastaImagens "\TPLinkHeader.png"
-        ){
+        if DetectarTPLink(){
             roteador := "TP-Link"
             break
         }
@@ -1122,18 +1223,10 @@ F4::{
             }
 
             ; ---------------------------------------------
-            ; TP-LINK
+            ; TP-LINK VIA OCR — PRIMEIRA OPÇÃO
             ; ---------------------------------------------
 
-            if ImageSearch(
-                &x,
-                &y,
-                0,
-                0,
-                A_ScreenWidth,
-                A_ScreenHeight * 0.35,
-                "*100 " PastaImagens "\TPLinkHeader.png"
-            ){
+            if DetectarTPLink(){
                 roteador := "TP-Link"
                 break
             }
@@ -1230,10 +1323,7 @@ F4::{
     }
 }
 
-; -------------------------------------------------
 ; FUNÇÃO: DETECTAR TELA DE CERTIFICADO
-; -------------------------------------------------
-
 DetectarTelaCertificado(){
     try{
         WinGetClientPos &wx, &wy, &ww, &wh, "A"
@@ -1279,9 +1369,44 @@ DetectarTelaCertificado(){
 }
 
 ; -------------------------------------------------
-; FUNÇÃO: DETECTAR ZYXEL E LOCALIZAR O CAMPO DE USUÁRIO
+; FUNÇÃO: DETECTAR TP-LINK POR OCR
 ; -------------------------------------------------
 
+DetectarTPLink(){
+    try{
+        WinGetClientPos &wx, &wy, &ww, &wh, "A"
+
+        ; Região central da tela
+        xOCR := wx + Round(ww * 0.30)
+        yOCR := wy + Round(wh * 0.20)
+        wOCR := Round(ww * 0.40)
+        hOCR := Round(wh * 0.50)
+
+        ; Faz o reconhecimento do texto
+        resultado := OCR.FromRect(
+            xOCR,
+            yOCR,
+            wOCR,
+            hOCR,
+            {
+                lang: "pt-BR",
+                scale: 2.0
+            }
+        )
+
+        ; Normaliza o texto reconhecido
+        texto := StrLower(resultado.Text)
+        texto := RegExReplace(texto, "[^a-z]", "")
+
+        ; Procura TP-Link, ignorando espaços e hífens
+        return InStr(texto, "tplink") > 0
+
+    } catch {
+        return false
+    }
+}
+
+; FUNÇÃO: DETECTAR ZYXEL E LOCALIZAR O CAMPO DE USUÁRIO
 DetectarZyxel(&zyxelClickX, &zyxelClickY){
     try{
         WinGetClientPos &wx, &wy, &ww, &wh, "A"
@@ -1340,7 +1465,6 @@ DetectarZyxel(&zyxelClickX, &zyxelClickY){
     }
 }
 
-
 ; =====================================================
 ; F6 - CONTATO OU CONTATO + PROTOCOLO FORTICS
 ; =====================================================
@@ -1358,207 +1482,64 @@ F6::{
     }
 }
 
-; PROCESSAMENTO DO F6
-ExecutarF6(copiarProtocolo := false){
+; PROCESSAMENTO DO F6 - EXTRAÇÃO PELA UIA
+ExecutarF6(copiarProtocolo := false) {
 
-    ; Guarda o clipboard atual
-    clipboardAnterior := A_Clipboard
+    try {
 
-    try{
-        ; ---------------------------------------------
-        ; PEGA A ÁREA ÚTIL DA JANELA ATUAL
-        ; ---------------------------------------------
+        ; Verifica se o navegador ativo é compatível
+        navegador := WinGetProcessName("A")
 
-        WinGetClientPos &wx, &wy, &ww, &wh, "A"
-
-        ; ---------------------------------------------
-        ; REGIÃO DO CABEÇALHO DO CONTATO
-        ; ---------------------------------------------
-
-        xOCR := wx + Round(ww * 0.15)
-        yOCR := wy + Round(wh * 0.05)
-
-        wOCR := Round(ww * 0.32)
-        hOCR := Round(wh * 0.20)
-
-        ; ---------------------------------------------
-        ; FAZ OCR AUTOMATICAMENTE
-        ; ---------------------------------------------
-
-        resultadoOCR := OCR.FromRect(
-            xOCR,
-            yOCR,
-            wOCR,
-            hOCR,
-            {
-                lang: "pt-BR",
-                scale: 2.5
-            }
-        )
-
-        ; ---------------------------------------------
-        ; CONVERTE AS LINHAS PARA UM ARRAY SIMPLES
-        ; ---------------------------------------------
-
-        linhas := []
-
-        for linha in resultadoOCR.Lines{
-            textoLinha := Trim(linha.Text)
-
-            if (textoLinha != "")
-                linhas.Push(textoLinha)
-        }
-
-        ; ---------------------------------------------
-        ; PROCURA "SUPORTE"
-        ; ---------------------------------------------
-
-        indiceSuporte := 0
-
-        for i, linha in linhas{
-            if InStr(StrLower(linha), "suporte"){
-                indiceSuporte := i
-                break
-            }
-        }
-
-        ; ---------------------------------------------
-        ; PROCURA O TELEFONE
-        ; ---------------------------------------------
-
-        telefone := ""
-        indiceTelefone := 0
-
-        ; TENTATIVA 1 - PRÓXIMO À PALAVRA "SUPORTE"
-
-        if (indiceSuporte > 1){
-
-            inicioBusca := Max(1, indiceSuporte - 4)
-            i := indiceSuporte - 1
-
-            while (i >= inicioBusca){
-
-                linhaAtual := Trim(linhas[i])
-                numeros := RegExReplace(linhaAtual, "\D")
-
-                if RegExMatch(
-                    numeros,
-                    "^55\d{10,11}",
-                    &correspondencia
-                ){
-                    telefone := correspondencia[0]
-                    indiceTelefone := i
-                    break
-                }
-
-                i--
-            }
-        }
-
-        ; ---------------------------------------------
-        ; TENTATIVA 2 - TODAS AS LINHAS
-        ; ---------------------------------------------
-
-        if (telefone = ""){
-
-            for i, linhaAtual in linhas{
-
-                numeros := RegExReplace(linhaAtual, "\D")
-
-                if RegExMatch(
-                    numeros,
-                    "^55\d{10,11}",
-                    &correspondencia
-                ){
-                    telefone := correspondencia[0]
-                    indiceTelefone := i
-                    break
-                }
-            }
-        }
-
-        ; ---------------------------------------------
-        ; RECUPERAÇÃO - OCR COM REGIÃO MAIOR
-        ; Executado somente se a primeira leitura falhar
-        ; ---------------------------------------------
-
-        if (telefone = ""){
-
-            xOCR := wx + Round(ww * 0.10)
-            yOCR := wy + Round(wh * 0.02)
-
-            wOCR := Round(ww * 0.44)
-            hOCR := Round(wh * 0.25)
-
-            resultadoOCR := OCR.FromRect(
-                xOCR,
-                yOCR,
-                wOCR,
-                hOCR,
-                {
-                    lang: "pt-BR",
-                    scale: 3.5
-                }
+        if (
+            navegador != "msedge.exe"
+            && navegador != "chrome.exe"
+            && navegador != "brave.exe"
+        ) {
+            MsgBox(
+                "Abra o Fortics no Edge, Chrome ou Brave.",
+                "SupportAutomation",
+                "Icon!"
             )
-
-            ; Reconstrói as linhas da nova captura
-            linhas := []
-
-            for linha in resultadoOCR.Lines{
-
-                textoLinha := Trim(linha.Text)
-
-                if (textoLinha != "")
-                    linhas.Push(textoLinha)
-            }
-
-            ; Procura o telefone em qualquer linha
-            for i, linhaAtual in linhas{
-
-                numeros := RegExReplace(
-                    linhaAtual,
-                    "\D"
-                )
-
-                if RegExMatch(
-                    numeros,
-                    "55\d{10,11}",
-                    &correspondencia
-                ){
-                    telefone := correspondencia[0]
-                    indiceTelefone := i
-                    break
-                }
-            }
-        }
-
-        ; ---------------------------------------------
-        ; VALIDA SE O TELEFONE FOI ENCONTRADO
-        ; ---------------------------------------------
-
-        if (telefone = ""){
-
-            A_Clipboard := clipboardAnterior
-
-            MostrarAviso(
-                "❌ Não foi possível identificar o telefone. Tente novamente."
-            )
-
             return
         }
 
-        ; ---------------------------------------------
-        ; REMOVE O CÓDIGO DO BRASIL
-        ; ---------------------------------------------
+        ; Acessa a árvore de acessibilidade do Edge
+        documento := UIA.ElementFromChromium("A", 1500)
 
-        telefone := SubStr(telefone, 3)
+        ; Localiza o painel de informações do contato
+        painelInfo := documento.FindElement({
+            AutomationId: "info_contact"
+        })
 
-        ; ---------------------------------------------
+        ; =============================================
+        ; IDENTIFICA O TELEFONE
+        ; =============================================
+
+        elementoTelefone := painelInfo.FindElement({
+            Type: "Text",
+            Name: "^55\d{10,11}$",
+            matchmode: "RegEx"
+        })
+
+        textoTelefone := elementoTelefone.Name
+
+        if !RegExMatch(
+            textoTelefone,
+            "^55\d{10,11}$",
+            &mTelefone
+        ) {
+            throw Error("Não foi possível validar o telefone.")
+        }
+
+        ; Remove o código do Brasil
+        telefone := SubStr(mTelefone[0], 3)
+
+        ; =============================================
         ; MODO 1 - SOMENTE CONTATO
-        ; ---------------------------------------------
+        ; =============================================
 
-        if (!copiarProtocolo){
-            
+        if (!copiarProtocolo) {
+
             A_Clipboard := telefone
 
             TocarSom("ContactCopy.mp3")
@@ -1570,14 +1551,36 @@ ExecutarF6(copiarProtocolo := false){
             return
         }
 
-        ; ---------------------------------------------
+        ; =============================================
         ; MODO 2 - CONTATO + PROTOCOLO FORTICS
-        ; ---------------------------------------------
+        ; =============================================
 
-        protocolo := ExtrairProtocoloFortics()
+        protocolo := ""
+
+        try {
+
+            elementoProtocolo := painelInfo.FindElement({
+                Type: "Link",
+                Name: "Protocolo:",
+                matchmode: "Substring"
+            })
+
+            textoProtocolo := elementoProtocolo.Name
+
+            if RegExMatch(
+                textoProtocolo,
+                "\d{10,20}",
+                &mProtocolo
+            ) {
+                protocolo := mProtocolo[0]
+            }
+
+        } catch {
+            protocolo := ""
+        }
 
         ; Se não encontrar o protocolo, mantém o telefone
-        if (protocolo = ""){
+        if (protocolo = "") {
 
             A_Clipboard := telefone
 
@@ -1590,146 +1593,40 @@ ExecutarF6(copiarProtocolo := false){
             return
         }
 
-        ; ---------------------------------------------
+        ; =============================================
         ; MONTA O TEXTO FINAL
-        ; ---------------------------------------------
+        ; =============================================
 
         resultadoFinal := telefone
         resultadoFinal .= "`nPROTOCOLO DO FORTICS: "
         resultadoFinal .= protocolo
 
-        ; Substitui o conteúdo anterior do clipboard
+        ; Copia o resultado
         A_Clipboard := resultadoFinal
 
         TocarSom("ContactCopy.mp3")
 
-        ; ---------------------------------------------
+        ; =============================================
         ; AVISO FINAL
-        ; ---------------------------------------------
+        ; =============================================
 
-        avisoFinal := "✓ Informações identificadas!`r`n"
-        avisoFinal .= "`r`n"
+        avisoFinal := "✓ Informações identificadas!"
+        avisoFinal .= "`r`n`r`n"
         avisoFinal .= "Contato: " telefone "`r`n"
-        avisoFinal .= "Protocolo do Fortics:  " protocolo
+        avisoFinal .= "Protocolo do Fortics: " protocolo
 
         MostrarAviso(avisoFinal)
 
     } catch as erro {
 
-        A_Clipboard := clipboardAnterior
-
         MsgBox(
-            "ERRO AO IDENTIFICAR O CONTATO:`n`n"
-            erro.Message
+            "Falha na extração pela UIA:"
+            . "`n`n" erro.Message,
+            "SupportAutomation",
+            "Iconx"
         )
     }
 }
-
-; EXTRAIR PROTOCOLO DO FORTICS
-ExtrairProtocoloFortics(){
-
-    try{
-        WinGetClientPos &wx, &wy, &ww, &wh, "A"
-
-        ; ---------------------------------------------
-        ; PRIMEIRA LEITURA: LOCALIZA O RÓTULO
-        ; ---------------------------------------------
-
-        xPainel := wx + Round(ww * 0.72)
-        yPainel := wy + Round(wh * 0.10)
-        wPainel := Round(ww * 0.28)
-        hPainel := Round(wh * 0.80)
-
-        resultadoPainel := OCR.FromRect(
-            xPainel,
-            yPainel,
-            wPainel,
-            hPainel,
-            {
-                lang: "pt-BR",
-                scale: 3.0
-            }
-        )
-
-        ; Procura a palavra Protocolo
-        rotulo := resultadoPainel.FindString("Protocolo")
-
-        ; Posição do rótulo encontrado
-        retangulo := rotulo.BoundingRect
-
-        ; ---------------------------------------------
-        ; SEGUNDA LEITURA: AMPLIA A LINHA DO PROTOCOLO
-        ; ---------------------------------------------
-
-        xLinha := Max(wx, retangulo.x - 8)
-        yLinha := Max(wy, retangulo.y - 12)
-
-        limiteDireito := wx + ww
-        limiteInferior := wy + wh
-
-        wLinha := limiteDireito - xLinha
-        hLinha := Max(50, retangulo.h + 30)
-
-        if (yLinha + hLinha > limiteInferior)
-            hLinha := limiteInferior - yLinha
-
-        resultadoLinha := OCR.FromRect(
-            xLinha,
-            yLinha,
-            wLinha,
-            hLinha,
-            {
-                lang: "pt-BR",
-                scale: 6.0
-            }
-        )
-
-        textoLinha := Trim(resultadoLinha.Text)
-
-        ; ---------------------------------------------
-        ; EXTRAI O NÚMERO DA LINHA AMPLIADA
-        ; ---------------------------------------------
-
-        if RegExMatch(
-            textoLinha,
-            "\d(?:[\s.-]*\d){9,19}",
-            &mProtocolo
-        ){
-
-            protocolo := RegExReplace(
-                mProtocolo[0],
-                "\D"
-            )
-
-            if (
-                StrLen(protocolo) >= 10
-                && StrLen(protocolo) <= 20
-            ){
-                return protocolo
-            }
-        }
-
-        ; ---------------------------------------------
-        ; DIAGNÓSTICO SE O NÚMERO NÃO FOR RECONHECIDO
-        ; ---------------------------------------------
-
-        MsgBox(
-            "O rótulo Protocolo foi encontrado, mas o número não."
-            "`n`nTexto da linha ampliada:"
-            "`n" textoLinha
-        )
-
-    } catch as erro {
-
-        MsgBox(
-            "Erro ao localizar o protocolo do Fortics:"
-            "`n`n" erro.Message
-        )
-    }
-
-    return ""
-}
-
 
 ; =====================================================
 ; PREENCHER PLANILHA DE MANUTENÇÃO E ABRIR ROTAS
@@ -1829,29 +1726,20 @@ F7::{
     ; EXTRAI E CONVERTE PERÍODO
     ; ---------------------------------------------
 
-    if !RegExMatch(
+
+    if RegExMatch(
         textoOS,
         "i)\b(?:HORA|PER[IÍ]ODO(?:[ \t]+AGENDADO)?)[ \t]*:[ \t]*([^\r\n]+)",
         &mHora
-    ){
-        MostrarAviso(
-            "❌ Não foi possível localizar o período na OS."
-            "`nCertifique de colocar o horário ou período no campo correspondente.",
-            5
-        )
-        return
-    }
+    ) {
+        periodoOriginal := Trim(mHora[1])
+        periodo := ObterPeriodoF7(periodoOriginal)
 
-    periodoOriginal := Trim(mHora[1])
-    periodo := ObterPeriodoF7(periodoOriginal)
+        if (periodo = "")
+            periodo := "QUALQUER HORARIO"
 
-    if (periodo = ""){
-        MostrarAviso(
-            "❌ Não reconheci o período: " periodoOriginal
-            "`nConfira as opções disponíveis na planilha.",
-            5
-        )
-        return
+    } else {
+        periodo := "QUALQUER HORARIO"
     }
 
     ; ---------------------------------------------
@@ -1896,7 +1784,7 @@ F7::{
     A_Clipboard := nome
     Sleep 50
     Send "^v"
-    Sleep 120
+    Sleep 220
     Send "{Tab}"
     Sleep 50
 
@@ -1931,7 +1819,7 @@ F7::{
 
     ; PULA ATÉ A COLUNA REGIÃO
     Sleep 150
-    Send "{Tab 6}"
+    Send "{Tab 5}"
     Send "{Enter}"
 
     ; ---------------------------------------------
@@ -2002,7 +1890,7 @@ EnviarEnderecoParaRotas(endereco, planilhaPreenchida := false) {
         resultadoRotas := OCR.FromRect(
             0,
             0,
-            Min(410, A_ScreenWidth),
+            Min(510, A_ScreenWidth),
             A_ScreenHeight,
             {
                 lang: "pt-BR",
@@ -2034,7 +1922,7 @@ EnviarEnderecoParaRotas(endereco, planilhaPreenchida := false) {
 
     if (temCompartilhar) {
 
-        Click 168, 850
+        Click 270, 850
         Sleep 100
 
         Send "+{Tab}"
@@ -2054,9 +1942,13 @@ EnviarEnderecoParaRotas(endereco, planilhaPreenchida := false) {
         ; FLUXO 2 - OUTRA TELA DO MAPA DE ROTAS
         ; -----------------------------------------
 
-        Click 168, 850
+        Click 270, 850
+        Sleep 200
+        Send "Tab"
+        Send "{Enter}"
         Sleep 200
 
+        Click 270, 850
         Send "+{Tab}"
         Sleep 150
         Send "+{Tab}"
@@ -2181,46 +2073,66 @@ ObterPeriodoF7(texto){
 }
 
 ; MAPEIA A CAUSA
-ObterCausaF7(texto){
+ObterCausaF7(texto) {
     c := NormalizarTextoF7(texto)
 
-    if InStr(c, "HOME HELP")
-        return "HOME HELP"
+    ; ---------------------------------------------
+    ; IDENTIFICA A PRIMEIRA CAUSA MENCIONADA
+    ; ---------------------------------------------
 
-    if InStr(c, "RECHAMADO") && InStr(c, "NIVEL 2")
-        return "RECHAMADO NIVEL 2"
+    padrao := "i)("
+    padrao .= "HOME HELP|"
+    padrao .= "RECHAMADO NIVEL 2|RECHAMADO|"
+    padrao .= "INCLUSAO DE ROTEADOR|UPGRADE|INCLUIR SEGUNDO PONTO|"
+    padrao .= "TROCAR[ \t]+(?:O[ \t]+)?ROTEADOR|"
+    padrao .= "SENHA[^\r\n]*(?:TROCAR|ALTERAR)|(?:TROCAR|ALTERAR)[^\r\n]*SENHA|"
+    padrao .= "MUDAR O ROTEADOR|MUDANCA DE PONTO|MUDAR O PONTO|"
+    padrao .= "LENTI|OSCIL|INSTAB|QUEDA|CAINDO|"
+    padrao .= "SEM CONEXAO|SEM INTERNET|\bLOS\b|SEM SINAL|"
+    padrao .= "PROBLEMA[^\r\n]*REPETIDOR|REPETIDOR[^\r\n]*PROBLEMA|SEGUNDO PONTO|MESH"
+    padrao .= ")"
 
-    if InStr(c, "RECHAMADO")
-        return "RECHAMADO"
-
-    if InStr(c, "INCLUSAO DE ROTEADOR") || InStr(c, "UPGRADE") || InStr(c, "INCLUIR SEGUNDO PONTO")
-        return "INCLUSAO DE ROTEADOR"
-
-    if InStr(c, "TROCAR") && InStr(c, "ROTEADOR")
-        return "TROCA DE ROTEADOR"
-
-    if InStr(c, "SENHA") && InStr(c, "TROCAR") || InStr(c, "ALTERAR")
-        return "TROCA DE SENHA"
-
-    if InStr(c, "Mudar o roteador") || InStr(c, "MUDANÇA DE PONTO") || InStr(c, "MUDAR O PONTO")
-        return "MUDANÇA DE PONTO"
-
-    if InStr(c, "LENTID") || InStr(c, "OSCIL") || InStr(c, "LENTO")
-        return "LENTIDÃO"
-
-    if InStr(c, "QUEDA") || InStr(c, "CAINDO")
-        return "QUEDAS"
-
-    if InStr(c, "SEM CONEXAO") || InStr(c, "SEM INTERNET") || InStr(c, "LOS") || InStr(c, "SEM SINAL")
-        return "SEM CONEXÃO"
-
-    if InStr(c, "Problema") && InStr(c, "repetidor") || InStr(c, "Segundo ponto") || InStr(c, "MESH") 
+    if !RegExMatch(c, padrao, &mCausa)
         return "OUTROS"
 
-    ; Causa não identificada: opção genérica válida
+    causaEncontrada := mCausa[1]
+
+    ; ---------------------------------------------
+    ; CONVERTE A EXPRESSÃO ENCONTRADA EM CAUSA
+    ; ---------------------------------------------
+
+    if InStr(causaEncontrada, "HOME HELP")
+        return "HOME HELP"
+
+    if InStr(causaEncontrada, "RECHAMADO") && InStr(causaEncontrada, "NIVEL 2")
+        return "RECHAMADO NIVEL 2"
+
+    if InStr(causaEncontrada, "RECHAMADO")
+        return "RECHAMADO"
+
+    if InStr(causaEncontrada, "INCLUSAO") || InStr(causaEncontrada, "UPGRADE") || InStr(causaEncontrada, "INCLUIR SEGUNDO PONTO")
+        return "INCLUSAO DE ROTEADOR"
+
+    if InStr(causaEncontrada, "TROCAR") && InStr(causaEncontrada, "ROTEADOR")
+        return "TROCA DE ROTEADOR"
+
+    if InStr(causaEncontrada, "SENHA")
+        return "TROCA DE SENHA"
+
+    if InStr(causaEncontrada, "MUDAR") || InStr(causaEncontrada, "MUDANCA DE PONTO")
+        return "MUDANÇA DE PONTO"
+
+    if InStr(causaEncontrada, "LENTI") || InStr(causaEncontrada, "OSCIL") || InStr(causaEncontrada, "INSTAB")
+        return "LENTIDÃO"
+
+    if InStr(causaEncontrada, "QUEDA") || InStr(causaEncontrada, "CAINDO")
+        return "QUEDAS"
+
+    if InStr(causaEncontrada, "SEM CONEXAO") || InStr(causaEncontrada, "SEM INTERNET") || InStr(causaEncontrada, "LOS") || InStr(causaEncontrada, "SEM SINAL")
+        return "SEM CONEXÃO"
+
     return "OUTROS"
 }
-
 ;=========================
 ; ENVIO DO PROTOCOLO
 ;=========================
@@ -2271,6 +2183,8 @@ ObterCausaF7(texto){
 
 ; PROTOCOLO COM FINALIZAÇÃO
 !q::{
+
+    clipboardOriginal := A_Clipboard
     protocolo := Trim(A_Clipboard)
 
     if (!RegExMatch(protocolo, "^20\d+$")) {
@@ -2286,6 +2200,10 @@ ObterCausaF7(texto){
 
     TocarSom("Protocol.mp3")
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
+
 }
 ;=========================
 ; FRASEOLOGIAS
@@ -2313,6 +2231,7 @@ ObterCausaF7(texto){
 }
 ; PROTOCOLO COM BLOQUEIO FINANCEIRO
 !b::{
+    clipboardOriginal := A_Clipboard
     protocolo := Trim(A_Clipboard)
 
     if (!RegExMatch(protocolo, "^20\d+$")) {
@@ -2325,6 +2244,9 @@ ObterCausaF7(texto){
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
 }
 ;SOLICITAR CPF/CNPJ
 !c::{
@@ -2332,7 +2254,7 @@ ObterCausaF7(texto){
 }
 ;CPF/CNPJ NÃO ENCONTRADO
 <^>!c::{
-    SendText "Por gentileza, poderia verificar se o CPF/CNPJ informado está correto? Não consegui localizá-lo em nossa base."
+    SendText "Por gentileza, poderia verificar se o CPF/CNPJ informado está correto. Não consegui localizá-lo em nossa base."
 }
 ; PEDIR FOTOS DOS EQUIPAMENTOS
 !f::{
@@ -2382,7 +2304,10 @@ O prazo de execução é de até 24 horas.
 !x::{
     SendText "Auxilio você em algo mais no momento?"
 }
-
+; TENTATIVA DE RETORNO DO CLIENTE
+>^SC073::{
+    SendText "Olá, você ainda está aí? 🤔"
+}
 ; APREENTAÇÃO COM PERGUNTA
 <!SC073::{
     global NomeAtendente
@@ -2539,11 +2464,11 @@ EnviarMensagemPrazo(prazo){
 }
 !4::{
     TocarSom("O.S.Filling.mp3")
-    SendText "Conexão do cliente voltou/normalizou após reinício do roteador"
+    SendText "Conexão do cliente voltou/normalizou"
 }
 !5::{
     TocarSom("O.S.Filling.mp3")
-    SendText "Cliente falou que a conexão normalizou"
+    SendText "Conexão do cliente voltou/normalizou após reinício do roteador"
 }
 !6::{
     TocarSom("O.S.Filling.mp3")
@@ -2564,23 +2489,36 @@ AppsKey & h::{
     clipboardOriginal := A_Clipboard
 
     ; Procura um e-mail no conteúdo copiado
-    if !RegExMatch(
+    email := ""
+
+    if RegExMatch(
         clipboardOriginal,
         "i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",
         &correspondenciaEmail
     ){
-        MostrarAviso("❌ Copie um e-mail válido antes de usar este atalho.")
-        return
+        email := correspondenciaEmail[0]
     }
 
-    email := correspondenciaEmail[0]
+    ; ---------------------------------------------
+    ; DEFINE A LINHA DO PASSO 2
+    ; ---------------------------------------------
+
+    if (email != ""){
+        linhaEmail := "Entre utilizando seu e-mail cadastrado: " email
+    } else {
+        linhaEmail := "Entre utilizando seu e-mail cadastrado"
+    }
+
+    ; ---------------------------------------------
+    ; MONTA O PASSO A PASSO
+    ; ---------------------------------------------
 
     texto := "
     (
     *Como ativar sua HBO Max™ pela Watch Brasil (ativação é feita apenas uma vez)*
 
     Passo 1: Acesse a Watch Brasil: https://play.watch.tv.br/ative
-    Passo 2: Entre utilizando seu e-mail cadastrado: [e-mail]
+    Passo 2: [LINHA_EMAIL]
     Passo 3: Clique no banner da HBO Max™
     Passo 4: Você será direcionado para a página de ativação.
 
@@ -2604,17 +2542,39 @@ AppsKey & h::{
     Qualquer dúvida, estamos à disposição!
     )"
 
-    ; Substitui o marcador pelo e-mail copiado
-    texto := StrReplace(texto, "[e-mail]", email)
+    ; Substitui o marcador pela linha correspondente
+    texto := StrReplace(texto, "[LINHA_EMAIL]", linhaEmail)
+
+    ; ---------------------------------------------
+    ; COPIA E ENVIA
+    ; ---------------------------------------------
 
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
 
-    MostrarAviso("✓ Instruções de ativação HBO Max")
+    A_Clipboard := clipboardOriginal
+
+    ; ---------------------------------------------
+    ; AVISO FINAL
+    ; ---------------------------------------------
+
+    if (email != ""){
+        MostrarAviso("✓ Instruções de ativação HBO Max")
+    } else {
+        TocarSom("alert2.mp3")
+        MostrarAviso(
+            "⚠️ Passo a passo enviado, porém sem o e-mail do cliente.",
+            5
+        )
+    }
 }
 ; ATIVAÇÃO DISNEY+
 AppsKey & d::{
+    
+    clipboardOriginal := A_Clipboard
+
     texto := "
     (
     *🎬 Como ativar o Disney+*
@@ -2646,11 +2606,18 @@ AppsKey & d::{
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
+
 
     MostrarAviso("✓ Instruções de ativação Disney+")
 }
 ; ACESSO AO ROTEADOR
 AppsKey & r::{
+
+    clipboardOriginal := A_Clipboard
+
     texto := "
     (
     *Como acessar o roteador:*
@@ -2665,10 +2632,16 @@ AppsKey & r::{
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
 
     MostrarAviso("✓ Instruções de acesso ao roteador enviadas!")
 }
 AppsKey & u::{
+
+    clipboardOriginal := A_Clipboard
+
     texto := "
     (
     ATIVAR UBOOK
@@ -2681,10 +2654,16 @@ AppsKey & u::{
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
 
     MostrarAviso("✓ Ativação de Ubook!")
 }
 AppsKey & q::{
+
+    clipboardOriginal := A_Clipboard
+
     texto := "
     (
     Entendi, me fale qual desses sinais você notou no seu dispositivo quando notou a queda:
@@ -2699,6 +2678,9 @@ AppsKey & q::{
     A_Clipboard := texto
     Sleep 50
     Send "^v"
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
 
     MostrarAviso("✓ validação de quedas enviada!")
 }
@@ -2708,29 +2690,41 @@ AppsKey & q::{
 
 ; PRIMEIRA FRASE
 !w::{
-global frase1
+    global frase1
+    clipboardOriginal := A_Clipboard
 
     A_Clipboard := frase1
     Sleep 50
     Send "^v"
+    Sleep 50
 
+    A_Clipboard := clipboardOriginal
+    TocarSom("alert.mp3")
     MostrarAviso("✓ Mensagem temporária 1 enviada!")
 }
 !y::{
-global frase2
+    global frase2
+    clipboardOriginal := A_Clipboard
 
     A_Clipboard := frase2
     Sleep 50
     Send "^v"
-    TocarSom("O.S.Filling.mp3")
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
+    TocarSom("alert.mp3")
     MostrarAviso("✓ Mensagem temporária 2 enviada!")
 }
 !z::{
-global frase3
+    global frase3
+    clipboardOriginal := A_Clipboard
 
     A_Clipboard := frase3
     Sleep 50
     Send "^v"
-    TocarSom("O.S.Filling.mp3")
+    Sleep 50
+
+    A_Clipboard := clipboardOriginal
+    TocarSom("alert.mp3")
     MostrarAviso("✓ Mensagem temporária 3 enviada!")
 }

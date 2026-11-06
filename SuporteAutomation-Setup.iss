@@ -2,10 +2,10 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 ; Non-commercial use only.
 
-#define MyAppName "SuporteAutomation"
-#define MyAppVersion "2.0"
-#define MyAppPublisher "SuporteAutomation"
-#define MyAppExeName "SupportAutomation_v2.0.exe"
+#define MyAppName "SupportAutomation"
+#define MyAppVersion "2.2.1"
+#define MyAppPublisher "SupportAutomation"
+#define MyAppExeName "SupportAutomation.exe"
 #define DoubleAmp(Value) StringChange(Value, "&", "&&")
 #define EscapeConstArgument(Value) StringChange(StringChange(StringChange(Value, "%", "%25"), ",", "%2c"), "}", "%7d")
 
@@ -30,9 +30,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only).
 ;PrivilegesRequired=lowest
-OutputBaseFilename=SuporteAutomation-Setup-v2.0
+OutputBaseFilename=SupportAutomation-Setup-v{#MyAppVersion}
 SolidCompression=yes
 WizardStyle=modern dynamic
+SetupIconFile=Imagens/IDV\iconeinstalacao.ico
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -49,7 +50,7 @@ Source: "C:\Users\LinQ\Desktop\SupportAutomation\sons\*"; DestDir: "{app}\sons";
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#DoubleAmp(MyAppName)}}"; Flags: nowait postinstall skipifsilent
