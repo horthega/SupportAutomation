@@ -6,7 +6,7 @@
 ; =====================================================
 
 ; Versão atualmente instalada
-SA_VersaoAtual := "2.2.1"
+SA_VersaoAtual := "2.3.0"
 
 ; Endereço público do arquivo de controle
 SA_UrlManifesto :=
@@ -26,6 +26,9 @@ SA_CartaoVersao := 0
 SA_FundoSelo := 0
 SA_ModoTesteAtualizacao := !A_IsCompiled
 
+; Estado da consulta assíncrona do atualizador.
+SA_AtualizacaoPID := 0
+SA_ArquivoManifesto := ""
 
 ; =====================================================
 ; INICIALIZA A VERIFICAÇÃO
@@ -33,46 +36,89 @@ SA_ModoTesteAtualizacao := !A_IsCompiled
 
 InicializarAtualizacao() {
     ; Aguarda 3 segundos após a inicialização.
-    SetTimer(VerificarAtualizacao, -3000)
+    SetTimer(IniciarConsultaManifesto, -3000)
 }
 
 ; =====================================================
-; VERIFICA SE EXISTE UMA NOVA VERSÃO
+; INICIA CONSULTA ASSÍNCRONA DO MANIFESTO (IPV4)
 ; =====================================================
 
-VerificarAtualizacao() {
+IniciarConsultaManifesto() {
+    global SA_UrlManifesto
+    global SA_AtualizacaoPID
+    global SA_ArquivoManifesto
 
-    global SA_VersaoAtual, SA_UrlManifesto, SA_ModoTesteAtualizacao
+    SA_ArquivoManifesto :=
+        A_Temp
+        . "\SA_Manifesto_"
+        . A_TickCount
+        . ".json"
 
     try {
+        comando :=
+            'curl.exe -4 -L --fail --silent --show-error'
+            . ' --connect-timeout 5 --max-time 12'
+            . ' -o "' SA_ArquivoManifesto '"'
+            . ' "' SA_UrlManifesto '"'
 
-        ; Consulta o GitHub
-        requisicao := ComObject(
-            "WinHttp.WinHttpRequest.5.1"
+        Run(
+            comando,
+            ,
+            "Hide",
+            &SA_AtualizacaoPID
         )
 
-        requisicao.Open(
-            "GET",
-            SA_UrlManifesto,
-            false
-        )
+        SetTimer(VerificarConclusaoManifesto, 250)
 
-        requisicao.SetTimeouts(
-            3000,
-            3000,
-            5000,
-            5000
-        )
+    } catch as erro {
+        ; Falha silenciosa na consulta.
+    }
+}
 
-        requisicao.Send()
+; =====================================================
+; VERIFICA CONCLUSÃO DA CONSULTA
+; =====================================================
 
-        ; Verifica a resposta
-        if (requisicao.Status != 200)
-            return
+VerificarConclusaoManifesto() {
+    global SA_AtualizacaoPID
+    global SA_ArquivoManifesto
 
-        json := requisicao.ResponseText
+    if ProcessExist(SA_AtualizacaoPID)
+        return
 
-        ; Extrai os campos do manifesto
+    SetTimer(VerificarConclusaoManifesto, 0)
+
+    json := ""
+
+    try {
+        if FileExist(SA_ArquivoManifesto)
+            json := FileRead(SA_ArquivoManifesto, "UTF-8")
+    } catch as erro {
+        ; Falha na leitura do manifesto.
+    }
+
+    try {
+        if FileExist(SA_ArquivoManifesto)
+            FileDelete(SA_ArquivoManifesto)
+    }
+
+    SA_AtualizacaoPID := 0
+    SA_ArquivoManifesto := ""
+
+    if (json = "")
+        return
+
+    ProcessarManifestoAtualizacao(json)
+}
+
+; =====================================================
+; PROCESSA O MANIFESTO RECEBIDO
+; =====================================================
+
+ProcessarManifestoAtualizacao(json) {
+    global SA_VersaoAtual, SA_ModoTesteAtualizacao
+
+    try {
         versaoRemota := ExtrairCampoJSONAtualizacao(
             json,
             "version"
@@ -93,22 +139,20 @@ VerificarAtualizacao() {
             "sha256"
         )
 
-        ; Valida a versão recebida
         if !RegExMatch(
             versaoRemota,
             "^\d+\.\d+\.\d+$"
         )
             return
 
-        ; Verifica se existe atualização
-        if !VersaoMaisNova(
+        resultadoComparacao := VersaoMaisNova(
             versaoRemota,
             SA_VersaoAtual
         )
+
+        if !resultadoComparacao
             return
 
-        ; Abre a janela visual de atualização.
-        ; O download e a instalação continuam usando o fluxo já validado.
         MostrarJanelaAtualizacao(
             versaoRemota,
             novidades,
@@ -117,13 +161,10 @@ VerificarAtualizacao() {
             SA_ModoTesteAtualizacao
         )
 
-    } catch {
-        ; Falhas de conexão não interrompem o programa.
-        return
+    } catch as erro {
+        ; Falha silenciosa no processamento.
     }
 }
-
-
 ; =====================================================
 ; EXTRAI CAMPOS DO JSON
 ; =====================================================
@@ -403,13 +444,19 @@ IniciarInstaladorAtualizacao(caminhoInstalador) {
 ; Não fica disponível na versão compilada.
 #HotIf !A_IsCompiled
 F9::{
-    MostrarJanelaAtualizacao(
-        "2.2.2",
-        "• Teste visual da nova janela de atualização.`n• O botão não executará instalação.",
-        "",
-        "",
-        true
-    )
+    novidades := "
+    (
+
+• Aprimoramentos nos atalhos F1, F2, F4, F6 e F7.
+
+• Novo recurso de personalização: agora as fraseologias podem ser customizadas para cada usuário.
+
+• Interface de configurações reformulada, com novos cards, ícones e melhorias de navegação.
+
+• Sistema de atualização automática aprimorado, com verificação de integridade do instalador.
+    )"
+
+    MostrarJanelaAtualizacao("2.3.0", novidades, "", "", true)
 }
 #HotIf
 
@@ -522,7 +569,7 @@ MostrarJanelaAtualizacao(versaoRemota, novidades, downloadUrl, sha256, modoTeste
 
     janela.SetFont("s9 norm c303030", "Segoe UI")
     txtNovidades := janela.AddText(
-        "x40 y" (yNovidades + 27) " w390",
+        "x40 y" (yNovidades + 27) " w350",
         novidades
     )
 

@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "SupportAutomation"
-#define MyAppVersion "2.2.1"
+#define MyAppVersion "2.2.2"
 #define MyAppPublisher "SupportAutomation"
 #define MyAppExeName "SupportAutomation.exe"
 #define DoubleAmp(Value) StringChange(Value, "&", "&&")
