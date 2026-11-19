@@ -357,12 +357,32 @@ TocarSom(arquivo) {
 ; =============================================
 ; COPIAR NÚMERO DA CHAMADA DO 3CXPHONE
 ; =============================================
+global SA_F1Executando := false
+
 F1::{
-    if KeyWait("F1", "T0.2") {
-        ExecutarF1()
-    } else {
-        ExecutarF1(true)
-        KeyWait("F1")
+    global SA_F1Executando
+
+    ; Impede execuções simultâneas
+    if (SA_F1Executando)
+        return
+
+    SA_F1Executando := true
+
+    try {
+        ; Aguarda até 0,2 segundo pela liberação
+        if KeyWait("F1", "T0.2") {
+            ExecutarF1()
+        }
+        else {
+            ; Atingiu 0,2 segundo: pesquisa no IXC
+            ExecutarF1(true)
+
+            ; Aguarda a liberação da tecla
+            KeyWait("F1")
+        }
+    }
+    finally {
+        SA_F1Executando := false
     }
 }
 
@@ -477,12 +497,32 @@ ExecutarF1(pesquisarIXC := false) {
 ;=========================
 ; PESQUISA DE CLIENTE
 ;=========================
+global SA_F2Executando := false
+
 F2::{
-    if KeyWait("F2", "T0.2") {
-        ExecutarF2()
-    } else {
-        ExecutarF2(true)
-        KeyWait("F2")
+    global SA_F2Executando
+
+    ; Impede execuções simultâneas
+    if (SA_F2Executando)
+        return
+
+    SA_F2Executando := true
+
+    try {
+        ; Aguarda até 0,2 segundo pela liberação
+        if KeyWait("F2", "T0.2") {
+            ExecutarF2()
+        }
+        else {
+            ; Atingiu 0,2 segundo: pesquisa no IXC
+            ExecutarF2(true)
+
+            ; Aguarda a liberação da tecla
+            KeyWait("F2")
+        }
+    }
+    finally {
+        SA_F2Executando := false
     }
 }
 
@@ -811,17 +851,33 @@ ExecutarF2(copiarContato := false, textoInformado := "") {
 ; Pressionamento por 0,2 segundo: Formata e copia com a frase de confirmação.
 ; =====================================================
 
-F3::{
-    ; Soltou antes de 0,2 segundo: modo normal
-    if KeyWait("F3", "T0.2"){
-        ExecutarF3(false)
-    }
-    else{
-        ; Atingiu 0,2 segundo: modo com a frase
-        ExecutarF3(true)
+; CONTROLE DO F3
+global SA_F3Executando := false
 
-        ; Impede repetição enquanto continuar pressionado
-        KeyWait("F3")
+F3::{
+    global SA_F3Executando
+
+    ; Impede execuções simultâneas
+    if (SA_F3Executando)
+        return
+
+    SA_F3Executando := true
+
+    try {
+        ; Aguarda até 0,2 segundo pela liberação
+        if KeyWait("F3", "T0.2") {
+            ExecutarF3(false)
+        }
+        else {
+            ; Atingiu 0,2 segundo: modo com confirmação
+            ExecutarF3(true)
+
+            ; Aguarda a liberação da tecla
+            KeyWait("F3")
+        }
+    }
+    finally {
+        SA_F3Executando := false
     }
 }
 
@@ -1643,16 +1699,33 @@ DetectarZyxel(&zyxelClickX, &zyxelClickY){
 ; =====================================================
 ; CONTATO OU CONTATO + PROTOCOLO FORTICS
 ; =====================================================
+
+global SA_F6Executando := false
+
 F6::{
-    ; Se soltar antes de 0,2 segundo
-    if KeyWait("F6", "T0.2"){
-        ExecutarF6(true)
+
+    global SA_F6Executando
+
+    ; Impede execuções simultâneas
+    if (SA_F6Executando)
+        return
+
+    SA_F6Executando := true
+
+    try {
+        ; Se soltar antes de 0,2 segundo
+        if KeyWait("F6", "T0.2"){
+            ExecutarF6(true)
     } else {
         ; Se mantiver pressionado por 0,2 segundo
         ExecutarF6(false)
 
         ; Evita nova execução enquanto continua segurando
         KeyWait("F6")
+         }
+    }
+    finally {
+        SA_F6Executando := false
     }
 }
 

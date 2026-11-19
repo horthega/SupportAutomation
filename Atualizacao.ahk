@@ -445,16 +445,15 @@ IniciarInstaladorAtualizacao(caminhoInstalador) {
 #HotIf !A_IsCompiled
 F9::{
     novidades := "
-    (
+(
+• F1 aprimorado: pressione a tecla por 0,2 segundos para copiar o número da ligação e pesquisar o cliente no IXC.
 
-• Aprimoramentos nos atalhos F1, F2, F4, F6 e F7.
+• F2 aprimorado: selecione o CPF/CNPJ e pressione a tecla por 0,2 segundos para pesquisar no IXC, já com contato e protocolo na área de transferência.
 
-• Novo recurso de personalização: agora as fraseologias podem ser customizadas para cada usuário.
+• F4 aprimorado: quando o roteador estiver na tela de login, pressione a tecla por 0,2 segundos para preencher as credenciais.
 
-• Interface de configurações reformulada, com novos cards, ícones e melhorias de navegação.
-
-• Sistema de atualização automática aprimorado, com verificação de integridade do instalador.
-    )"
+• F7 com cancelamento: pressione F7 novamente para interromper a automação durante o preenchimento da planilha.
+)"
 
     MostrarJanelaAtualizacao("2.3.0", novidades, "", "", true)
 }
@@ -569,7 +568,7 @@ MostrarJanelaAtualizacao(versaoRemota, novidades, downloadUrl, sha256, modoTeste
 
     janela.SetFont("s9 norm c303030", "Segoe UI")
     txtNovidades := janela.AddText(
-        "x40 y" (yNovidades + 27) " w350",
+        "x40 y" (yNovidades + 27) " w350 +Wrap",
         novidades
     )
 
